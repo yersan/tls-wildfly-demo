@@ -1,0 +1,9 @@
+build:
+  uri: https://github.com/yersan/tls-wildfly-demo.git
+  ref: initial-commit
+  contextDir: tls-wildfly-demo-frontend
+deploy:
+  replicas: 1
+  env:
+  - name: backend-service_mp-rest_url
+    value: "http://tls-wildfly-demo-backend:8080"
