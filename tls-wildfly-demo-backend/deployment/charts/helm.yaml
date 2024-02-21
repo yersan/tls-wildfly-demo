@@ -1,0 +1,8 @@
+build:
+  uri: https://github.com/yersan/tls-wildfly-demo.git
+  ref: initial-commit
+  contextDir: tls-wildfly-demo-backend
+deploy:
+  replicas: 1
+  route:
+    enabled: false

@@ -1,0 +1,258 @@
+= TLS WildFly Demo
+
+A demo project as a playground for TLS and mutual TLS microservice configuration with WildFly.
+
+The project is split into three branches:
+
+* initial-commit: This branch contains two Wildfly Microservices (frontend and backend) without TLS enabled. These microservices can be deployed using WildFly Helm Charts. The frontend microservice is exposed via router working with edge TLS termination.
+* external-traffic: This branch contains the changes applied on top of `initial-commit` to secure the external traffic with one way TLS. The required certificates need to be manually created under tls-wildfly-demo-frontend/deployment/tls.
+* mutual-tls: This branch contains the changes applied on top of `external-traffic` to secure the communication between frontend and backend microservices using mutual TLS. The required certificates need to be manually created under `tls-wildfly-demo-frontend/deployment/tls` and `tls-wildfly-demo-backend/deployment/tls`. See instructions in the following sections.
+
+== Prerequisites
+* Install Helm Charts https://helm.sh/docs/intro/install/
+* Install WildFly Helm Charts:
++
+----
+$ helm repo add wildfly https://docs.wildfly.org/wildfly-charts/
+----
+* Optional ./jq https://jqlang.github.io/jq/
+
+== Default configuration
+Checkout the `initial-commit` branch.
+
+. Deploy the frontend:
++
+----
+$ helm install tls-wildfly-demo-frontend -f ./tls-wildfly-demo-frontend/deployment/charts/helm.yaml wildfly/wildfly
+----
+. Deploy the backend:
++
+----
+$ helm install tls-wildfly-demo-backend -f ./tls-wildfly-demo-backend/deployment/charts/helm.yaml wildfly/wildfly
+----
+. Access the frontend endpoint:
++
+----
+$ curl -k -s https://$(oc get routes/tls-wildfly-demo-frontend  -o jsonpath='{.spec.host}')/greetings | jq
+{
+  "hostname": "tls-wildfly-demo-frontend-b8679c994-cz4mw",
+  "localAddress": "10.128.13.227",
+  "localPort": 8080,
+  "message": "Hello From WildFly Frontend Microservice!"
+}
+----
+. Access the backend microservice from the frontend endpoint:
++
+----
+$ curl -k -s https://$(oc get routes/tls-wildfly-demo-frontend  -o jsonpath='{.spec.host}')/greetings/backend | jq
+{
+  "hostname": "tls-wildfly-demo-backend-6b76965ff8-t4xxd",
+  "localAddress": "10.128.13.226",
+  "localPort": 8080,
+  "message": "Hello from WildFly Backend Microservice!"
+}
+----
+
+The frontend microservice is accessed using TLS with the termination in the route. The communication between the route and the frontend is not encrypted. On the second request, the frontend microservice calls the backend microservice also without using TLS. enabled.
+
+== Securing the external traffic
+Checkout the `external-traffic` branch.
+
+. Navigate to tls-wildfly-demo-frontend/deployment/tls
++
+----
+$ cd tls-wildfly-demo-frontend/deployment/tls
+----
+. Generate the required certificates:
++
+----
+$ keytool -noprompt -genkeypair -keyalg RSA -keysize 2048 \
+  -validity 365 \
+  -dname "CN=tls-wildfly-demo-frontend" \
+  -ext "SAN:c=DNS:localhost" \
+  -alias wildfly.frontend.service \
+  -storepass secret \
+  -keypass secret \
+  -keystore wildfly.frontend.service.keystore.pkcs12
+----
+. Create a secret to mount the keystore into the frontend microservice:
++
+----
+$ oc create secret generic tls-frontend-secret \
+--from-file=wildfly.frontend.service.keystore.pkcs12 \
+--from-literal=key-trust-store-password=secret
+----
+. Back to the root frontend microservice maven project directory and upgrade the frontend helm chart to pick up the new configuration:
++
+----
+$ cd ../../
+$ helm upgrade tls-wildfly-demo-frontend -f ./deployment/charts/helm.yaml wildfly/wildfly
+----
+. Start a new build to pick up the server changes we have applied in this branch:
++
+----
+$ oc start-build tls-wildfly-demo-frontend-build-artifacts
+----
+. Once the build finishes and the new frontend pod starts, invoke the frontend endpoint using the route:
++
+----
+$ curl -k -s https://$(oc get routes/tls-wildfly-demo-frontend  -o jsonpath='{.spec.host}')/greetings | jq
+{
+  "hostname": "tls-wildfly-demo-frontend-5bd9bbcbd7-q7d9b",
+  "localAddress": "10.128.28.155",
+  "localPort": 8443,
+  "message": "Hello From WildFly Frontend Microservice!"
+}
+----
++
+This time the request arrived directly to the 8443 port on the pod, which is the HTTPS port configured in WildFly.
+. Verify it is also possible to reach out the backend from the frontend:
++
+----
+$ curl -k -s https://$(oc get routes/tls-wildfly-demo-frontend  -o jsonpath='{.spec.host}')/greetings/backend | jq
+{
+  "hostname": "tls-wildfly-demo-backend-6b76965ff8-t4xxd",
+  "localAddress": "10.128.13.226",
+  "localPort": 8080,
+  "message": "Hello from WildFly Backend Microservice!"
+}
+----
++
+This traffic is still unsecured and arriving to the 8080 port.
+
+== Enabling Mutual TLS between the frontend and backend
+Checkout the `mutual-tls` branch.
+
+. From tls-wildfly-demo-backend/deployment/tls directory, generate the backend keystore and truststore:
++
+----
+$ cd tls-wildfly-demo-backend/deployment/tls
+$ keytool -noprompt -genkeypair -keyalg RSA -keysize 2048 \
+  -validity 365 \
+  -dname "CN=tls-wildfly-demo-backend" \
+  -ext "SAN:c=DNS:localhost,DNS:tls-wildfly-demo-backend-secure" \
+  -alias wildfly.backend.service \
+  -storepass secret \
+  -keypass secret \
+  -keystore wildfly.backend.service.keystore.pkcs12
+----
+. Extract the backend certificate from the keystore:
++
+----
+$ keytool -exportcert -keystore wildfly.backend.service.keystore.pkcs12 \
+   -alias wildfly.backend.service \
+   -keypass secret \
+   -storepass secret \
+   -file wildfly.backend.service.crt
+----
+. From tls-wildfly-demo-frontend/deployment/tls directory, extract the frontend certificate:
++
+----
+$ keytool -exportcert -keystore wildfly.frontend.service.keystore.pkcs12 \
+   -alias wildfly.frontend.service \
+   -keypass secret \
+   -storepass secret \
+   -file wildfly.frontend.service.crt
+----
+. From tls-wildfly-demo-frontend/deployment/tls directory, create the frontend truststore by importing the backend certificate:
++
+----
+$ keytool -noprompt -keystore wildfly.frontend.service.truststore \
+  -importcert -file ../../../tls-wildfly-demo-backend/deployment/tls/wildfly.backend.service.crt \
+  -alias wildfly.frontend.service \
+  -storepass secret
+----
+. From tls-wildfly-demo-backend/deployment/tls directory, create the backend truststore by importing the frontend certificate:
++
+----
+$ keytool -noprompt -keystore wildfly.backend.service.truststore \
+-importcert -file ../../../tls-wildfly-demo-frontend/deployment/tls/wildfly.frontend.service.crt \
+-alias wildfly.backend.service \
+-storepass secret
+----
+. From tls-wildfly-demo-backend/deployment/tls directory, create a secret to mount the backend keystore and truststore in the backend microservice:
++
+----
+$ oc create secret generic tls-backend-secret \
+--from-file=wildfly.backend.service.keystore.pkcs12 \
+--from-file=wildfly.backend.service.truststore \
+--from-literal=key-trust-store-password=secret
+----
+. From tls-wildfly-demo-frontend/deployment/tls directory, delete the old secret and create a new one including the frontend keystore and truststore to mount them in the frontend microservice:
++
+----
+$ oc delete secret tls-frontend-secret
+$ oc create secret generic tls-frontend-secret \
+--from-file=wildfly.frontend.service.keystore.pkcs12 \
+--from-file=wildfly.frontend.service.truststore \
+--from-literal=key-trust-store-password=secret
+----
+. Upgrade both Helm charts:
++
+----
+$ helm upgrade tls-wildfly-demo-frontend -f ./deployment/charts/helm.yaml wildfly/wildfly
+$ helm upgrade tls-wildfly-demo-backend -f ./deployment/charts/helm.yaml wildfly/wildfly
+----
+. Start new builds for the backend and frontend to pick up the new server changes incorporated in this branch:
++
+----
+$ oc start-build tls-wildfly-demo-frontend-build-artifacts
+$ oc start-build tls-wildfly-demo-backend-build-artifacts
+----
+. Once the build finishes and the new frontend pod starts, invoke the frontend endpoint using the route:
++
+----
+$ curl -k -s https://$(oc get routes/tls-wildfly-demo-frontend  -o jsonpath='{.spec.host}')/greetings | jq
+{
+  "hostname": "tls-wildfly-demo-frontend-5c77f6b7f7-ljvnf",
+  "localAddress": "10.128.12.64",
+  "localPort": 8443,
+  "message": "Hello From WildFly Frontend Microservice!"
+}
+----
++
+The frontend service is receiving the request from the 8443 port, which is the HTTPS port.
+. Now invoke the backend endpoint from the frontend endpoint:
++
+----
+$ curl -k -s https://$(oc get routes/tls-wildfly-demo-frontend  -o jsonpath='{.spec.host}')/greetings/backend | jq
+{
+  "hostname": "tls-wildfly-demo-backend-7db4f9789c-qjs7x",
+  "localAddress": "10.128.12.65",
+  "localPort": 8443,
+  "message": "Hello from WildFly Backend Microservice!"
+}
+----
++
+Now the traffic arrives to the backend microservice also via the secured 8443 port.
+
+You can also check you cannot access the backend service using TLS without having the backend certificate. For example, trying to access the backend from the frontend por without specifying the certificates fails:
+
+----
+$ oc rsh tls-wildfly-demo-frontend-5c77f6b7f7-ljvnf
+sh-4.4$ curl -v -k https://tls-wildfly-demo-backend-secure:8443/greetings
+*   Trying 172.30.222.153...
+* TCP_NODELAY set
+* Connected to tls-wildfly-demo-backend-secure (172.30.222.153) port 8443 (#0)
+* ALPN, offering h2
+* ALPN, offering http/1.1
+* successfully set certificate verify locations:
+*   CAfile: /etc/pki/tls/certs/ca-bundle.crt
+  CApath: none
+* TLSv1.3 (OUT), TLS handshake, Client hello (1):
+* TLSv1.3 (IN), TLS handshake, Server hello (2):
+* TLSv1.2 (IN), TLS handshake, Certificate (11):
+* TLSv1.2 (IN), TLS handshake, Server key exchange (12):
+* TLSv1.2 (IN), TLS handshake, Request CERT (13):
+* TLSv1.2 (IN), TLS handshake, Server finished (14):
+* TLSv1.2 (OUT), TLS handshake, Certificate (11):
+* TLSv1.2 (OUT), TLS handshake, Client key exchange (16):
+* TLSv1.2 (OUT), TLS change cipher, Change cipher spec (1):
+* TLSv1.2 (OUT), TLS handshake, Finished (20):
+* TLSv1.2 (IN), TLS alert, bad certificate (554):
+* error:14094412:SSL routines:ssl3_read_bytes:sslv3 alert bad certificate
+* Closing connection 0
+curl: (35) error:14094412:SSL routines:ssl3_read_bytes:sslv3 alert bad certificate
+sh-4.4$
+----
+
