@@ -1,9 +1,29 @@
 build:
   uri: https://github.com/yersan/tls-wildfly-demo.git
-  ref: initial-commit
+  ref: external-traffic
   contextDir: tls-wildfly-demo-frontend
 deploy:
   replicas: 1
+  tls:
+    enabled: true
+  route:
+    tls:
+      termination: "passthrough"
   env:
   - name: backend-service_mp-rest_url
     value: "http://tls-wildfly-demo-backend:8080"
+  - name: KEYSTORE_PASSWORD
+    valueFrom:
+      secretKeyRef:
+        name: tls-frontend-secret
+        key: key-trust-store-password
+  - name: TLS_PATH
+    value: "/etc/wildfly-tls"
+  volumeMounts:
+  - name: tls-vol
+    mountPath: "/etc/wildfly-tls"
+    readOnly: true
+  volumes:
+  - name: tls-vol
+    secret:
+      secretName: tls-frontend-secret
