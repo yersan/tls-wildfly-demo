@@ -23,12 +23,14 @@ Checkout the `initial-commit` branch.
 . Deploy the frontend:
 +
 ----
-$ helm install tls-wildfly-demo-frontend -f ./tls-wildfly-demo-frontend/deployment/charts/helm.yaml wildfly/wildfly
+$ helm install tls-wildfly-demo-frontend \
+  -f ./tls-wildfly-demo-frontend/deployment/charts/helm.yaml wildfly/wildfly
 ----
 . Deploy the backend:
 +
 ----
-$ helm install tls-wildfly-demo-backend -f ./tls-wildfly-demo-backend/deployment/charts/helm.yaml wildfly/wildfly
+$ helm install tls-wildfly-demo-backend \
+  -f ./tls-wildfly-demo-backend/deployment/charts/helm.yaml wildfly/wildfly
 ----
 . Access the frontend endpoint:
 +
