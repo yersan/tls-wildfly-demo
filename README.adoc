@@ -88,7 +88,8 @@ $ oc create secret generic tls-frontend-secret \
 +
 ----
 $ cd ../../
-$ helm upgrade tls-wildfly-demo-frontend -f ./deployment/charts/helm.yaml wildfly/wildfly
+$ helm upgrade tls-wildfly-demo-frontend \
+  -f ./deployment/charts/helm.yaml wildfly/wildfly
 ----
 . Start a new build to pick up the server changes we have applied in this branch:
 +
