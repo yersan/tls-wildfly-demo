@@ -1,6 +1,6 @@
 build:
   uri: https://github.com/yersan/tls-wildfly-demo.git
-  ref: external-traffic
+  ref: mutual-tls
   contextDir: tls-wildfly-demo-frontend
 deploy:
   replicas: 1
@@ -11,7 +11,21 @@ deploy:
       termination: "passthrough"
   env:
   - name: backend-service_mp-rest_url
-    value: "http://tls-wildfly-demo-backend:8080"
+    value: "https://tls-wildfly-demo-backend-secure:8443"
+  - name: backend-service_mp-rest_trustStore
+    value: "/etc/wildfly-tls/wildfly.frontend.service.truststore"
+  - name: backend-service_mp-rest_keyStore
+    value: "/etc/wildfly-tls/wildfly.frontend.service.keystore.pkcs12"
+  - name: backend-service_mp-rest_trustStorePassword
+    valueFrom:
+      secretKeyRef:
+        name: tls-frontend-secret
+        key: key-trust-store-password
+  - name: backend-service_mp-rest_keyStorePassword
+    valueFrom:
+      secretKeyRef:
+        name: tls-frontend-secret
+        key: key-trust-store-password
   - name: KEYSTORE_PASSWORD
     valueFrom:
       secretKeyRef:

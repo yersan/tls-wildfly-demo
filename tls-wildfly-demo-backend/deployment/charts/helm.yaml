@@ -1,8 +1,26 @@
 build:
   uri: https://github.com/yersan/tls-wildfly-demo.git
-  ref: external-traffic
+  ref: mutual-tls
   contextDir: tls-wildfly-demo-backend
 deploy:
   replicas: 1
+  tls:
+    enabled: true
   route:
     enabled: false
+  env:
+  - name: KEYSTORE_PASSWORD
+    valueFrom:
+      secretKeyRef:
+        name: tls-backend-secret
+        key: key-trust-store-password
+  - name: TLS_PATH
+    value: "/etc/wildfly-tls"
+  volumeMounts:
+  - name: tls-vol
+    mountPath: "/etc/wildfly-tls"
+    readOnly: true
+  volumes:
+  - name: tls-vol
+    secret:
+      secretName: tls-backend-secret

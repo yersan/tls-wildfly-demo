@@ -1,0 +1,21 @@
+batch
+
+# Configure Keystore
+/subsystem=elytron/key-store=backend-key-store:add(path="${TLS_PATH:.}/wildfly.backend.service.keystore.pkcs12", credential-reference={clear-text=${KEYSTORE_PASSWORD:unknown}})
+
+# Configure Keystore manager
+/subsystem=elytron/key-manager=backend-key-manager:add(key-store=backend-key-store, credential-reference={clear-text=${KEYSTORE_PASSWORD:unknown}})
+
+# Configure the Truststore
+/subsystem=elytron/key-store=backend-trust-store:add(path="${TLS_PATH:.}/wildfly.backend.service.truststore", credential-reference={clear-text=${KEYSTORE_PASSWORD:unknown}})
+
+# Configure the Trust Store Manager
+/subsystem=elytron/trust-manager=backend-trust-manager:add(key-store=backend-trust-store)
+
+# Configure the SSL Context
+/subsystem=elytron/server-ssl-context=backend-ssl-context:add(key-manager=backend-key-manager,trust-manager=backend-trust-manager,need-client-auth=true)
+
+# Configure Undertow Listener
+/subsystem=undertow/server=default-server/https-listener=https:add(ssl-context=backend-ssl-context, socket-binding=https, proxy-address-forwarding=true)
+
+run-batch

@@ -65,6 +65,14 @@
                             <layer>cloud-server</layer>
                         </layers>
                         <name>ROOT.war</name>
+                        <packaging-scripts>
+                            <packaging-script>
+                                <scripts>
+                                    <script>${basedir}/wildfly-configuration.cli</script>
+                                </scripts>
+                                <resolve-expressions>false</resolve-expressions>
+                            </packaging-script>
+                        </packaging-scripts>
                     </configuration>
                     <executions>
                         <execution>
